@@ -1,5 +1,5 @@
-
-import React from "react";
+// src/components/PivotPage.tsx
+import React, { useState } from "react";
 import { useData } from "../store/Store";
 import { useCsvParser } from "../components/useCsvParser";
 import { usePivotDnD } from "../components/usePivotDnD";
@@ -27,10 +27,45 @@ export const PivotPage: React.FC = () => {
     onDropValueField,
   } = usePivotDnD();
 
-  const pivot =
+  
+  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  
+  const fullPivot =
     rows.length && rowField.length && columnField.length
       ? buildPivot(rows, rowField, columnField, valueField, aggType)
       : null;
+
+  
+  let pagedPivot = fullPivot;
+  let totalPages = 1;
+  let currentPageDisplay = 1;
+
+  if (fullPivot) {
+    const totalRows = fullPivot.rowArray.length;
+    totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+    currentPageDisplay = Math.min(currentPage, totalPages);
+
+    const start = (currentPageDisplay - 1) * pageSize;
+    const end = start + pageSize;
+
+    pagedPivot = {
+      rowArray: fullPivot.rowArray.slice(start, end),
+      colArray: fullPivot.colArray,
+      matrix: fullPivot.matrix.slice(start, end),
+    };
+  }
+
+  const handlePrevPage = () => {
+    setCurrentPage((p) => Math.max(1, p - 1));
+  };
+
+  const handleNextPage = () => {
+    setCurrentPage((p) =>
+      fullPivot ? Math.min(totalPages, p + 1) : p
+    );
+  };
 
   return (
     <div className="p-20">
@@ -57,7 +92,6 @@ export const PivotPage: React.FC = () => {
         ))}
       </div>
 
-      
       <div style={{ display: "flex", gap: 24, marginTop: 16 }}>
         <div>
           <strong>Row fields:</strong>{" "}
@@ -131,13 +165,57 @@ export const PivotPage: React.FC = () => {
       </div>
 
       
+      {fullPivot && (
+        <div
+          style={{
+            marginTop: 16,
+            marginBottom: 8,
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+          }}
+        >
+          <button
+            onClick={handlePrevPage}
+            disabled={currentPageDisplay === 1}
+          >
+            Prev
+          </button>
+          <span>
+            Page {currentPageDisplay} of {totalPages}
+          </span>
+          <button
+            onClick={handleNextPage}
+            disabled={currentPageDisplay === totalPages}
+          >
+            Next
+          </button>
+
+          <span style={{ marginLeft: 16 }}>
+            Rows per page:{" "}
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1); // reset page when page size changes
+              }}
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </span>
+        </div>
+      )}
+
       <div style={{ marginTop: 24 }}>
         <h3>
           Pivot Result{" "}
           {valueField && `(${aggType.toUpperCase()} of ${valueField})`}
         </h3>
         <PivotTable
-          pivot={pivot}
+          pivot={pagedPivot}
           rowField={rowField}
           columnField={columnField}
         />
@@ -145,3 +223,4 @@ export const PivotPage: React.FC = () => {
     </div>
   );
 };
+

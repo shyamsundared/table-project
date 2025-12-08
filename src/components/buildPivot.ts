@@ -1,4 +1,4 @@
-// src/hooks/buildPivot.ts
+
 import type { Row, PivotResult, AggType } from "../types/Type";
 
 type CellAgg = {
@@ -15,12 +15,12 @@ export const buildPivot = (
   valueField: string | null,
   aggType: AggType
 ): PivotResult | null => {
-  // Need rows + row groups + col groups
+  
   if (!data.length || !rowField.length || !colField.length) {
     return null;
   }
 
-  // For SUM / AVG / MIN / MAX, we need a value field
+ 
   if (aggType !== "count" && !valueField) {
     return null;
   }
@@ -38,7 +38,7 @@ export const buildPivot = (
 
     const key = `${rowKey}__${colKey}`;
 
-    // init aggregation slot if needed
+   
     if (!cellMap.has(key)) {
       cellMap.set(key, {
         sum: 0,
