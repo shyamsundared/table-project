@@ -11,7 +11,7 @@ import type { storetype } from "../types/Type";
  * - When you call setValueField (single) we keep valueFields in sync.
  * - Exposes helpers to add/remove/clear valueFields for DnD multiple-values UX.
  */
-export const useData = create<storetype>((set, get) => ({
+export const useData = create<storetype>((set) => ({
   rows: [],
   columns: [],
   rowField: [],
@@ -52,7 +52,7 @@ export const useData = create<storetype>((set, get) => ({
 
   // single value field setter (keeps valueFields in sync)
   setvalueField: (field: string | null) =>
-    set((state) => {
+    set(() => {
       const newValueFields = field ? [field] : [];
       return { valueField: field, valueFields: newValueFields };
     }),

@@ -33,9 +33,9 @@ export const PivotTable: React.FC<Props> = ({
   pivot,
   fullPivot = null,
   rowField,
-  columnField,
+  
   valueFields = [],
-  pageStart = 0,
+  
   aggType = "count",
 }) => {
   const headerPivot = fullPivot ?? pivot ?? null;
