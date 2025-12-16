@@ -1,14 +1,20 @@
 // src/hooks/useCsvParser.ts
+import { useState } from "react";
 import Papa from "papaparse";
 import type { Row } from "../types/Type";
 import { useData } from "../store/Store";
 
 export const useCsvParser = () => {
   const { setrows, setcolumns } = useData();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setIsLoading(true);
+    setError(null);
 
     Papa.parse<Row>(file, {
       header: true,
@@ -21,12 +27,16 @@ export const useCsvParser = () => {
         } else {
           setcolumns([]);
         }
+        setIsLoading(false);
       },
       error: (err) => {
-        console.log("cannot parse csv", err);
+        console.error("Cannot parse CSV:", err);
+        setError("Failed to parse CSV file. Please check the file format.");
+        setIsLoading(false);
       },
     });
   };
 
-  return { handleFileChange };
+  return { handleFileChange, isLoading, error };
 };
+
