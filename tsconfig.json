@@ -5,7 +5,7 @@
     { "path": "./tsconfig.node.json" }
   ],
   "compilerOptions": {
-    "compilerOptions": {
+    
     "target": "ES2020",
     "module": "ESNext",
     "lib": ["DOM", "ES2020"],
@@ -19,5 +19,5 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true
-  }
+  
 }}
