@@ -33,9 +33,8 @@ export const PivotTable: React.FC<Props> = ({
   pivot,
   fullPivot = null,
   rowField,
-  
   valueFields = [],
-  
+  pageStart = 0,
   aggType = "count",
 }) => {
   const headerPivot = fullPivot ?? pivot ?? null;
@@ -241,14 +240,17 @@ export const PivotTable: React.FC<Props> = ({
           traverse(child, [...path, node.value], newRowspans);
         }
 
-        // Add subtotal row for this parent
-        rows.push({
-          type: 'subtotal',
-          path: [...path, node.value],
-          level: node.level,
-          rowspans: new Array(leftLevels).fill(0), // Subtotals don't need rowspans
-          parentValue: node.value,
-        });
+        // Add subtotal row for this parent (but not for leaf level)
+        // Leaf level is leftLevels - 1, so only add subtotals for levels < leftLevels - 1
+        if (node.level < leftLevels - 1) {
+          rows.push({
+            type: 'subtotal',
+            path: [...path, node.value],
+            level: node.level,
+            rowspans: new Array(leftLevels).fill(0), // Subtotals don't need rowspans
+            parentValue: node.value,
+          });
+        }
       }
     };
 
@@ -266,6 +268,114 @@ export const PivotTable: React.FC<Props> = ({
     rowspans: r.rowspans,
     parentValue: r.parentValue,
   })));
+
+  // PAGINATION: Filter visible rows based on pageStart
+  const pagedRowKeys = pivot?.rowArray ?? [];
+  const pageStartIdx = pageStart ?? 0;
+  const pageEndIdx = pageStartIdx + pagedRowKeys.length;
+
+  const visibleRows: RenderRow[] = [];
+  const includedDataIndices = new Set<number>();
+  
+  // First pass: collect visible data rows
+  for (const row of renderRows) {
+    if (row.type === 'data') {
+      if (row.dataIndex! >= pageStartIdx && row.dataIndex! < pageEndIdx) {
+        visibleRows.push(row);
+        includedDataIndices.add(row.dataIndex!);
+      }
+    }
+  }
+
+  // Second pass: include subtotals that have visible children
+  for (const row of renderRows) {
+    if (row.type === 'subtotal') {
+      const subtotalLevel = row.level!;
+      const subtotalPath = row.path.slice(0, subtotalLevel + 1);
+      const subtotalKey = subtotalPath.join("\x1F");
+      
+      let hasVisibleChildren = false;
+      for (const dataIdx of includedDataIndices) {
+        const dataPath = fullPaths[dataIdx].slice(0, subtotalLevel + 1);
+        if (dataPath.join("\x1F") === subtotalKey) {
+          hasVisibleChildren = true;
+          break;
+        }
+      }
+      
+      if (hasVisibleChildren) {
+        visibleRows.push(row);
+      }
+    }
+  }
+
+  // Sort visible rows to maintain proper order (data rows, then their subtotals)
+  visibleRows.sort((a, b) => {
+    const aIdx = renderRows.indexOf(a);
+    const bIdx = renderRows.indexOf(b);
+    return aIdx - bIdx;
+  });
+
+  // Recalculate rowspans for visible rows only
+  const pageRowspans = new Map<string, number>();
+  
+  for (let level = 0; level < leftLevels; level++) {
+    let currentValue: string | null = null;
+    let startIdx = 0;
+    let rowCount = 0;
+    
+    for (let i = 0; i < visibleRows.length; i++) {
+      const row = visibleRows[i];
+      
+      // For subtotal rows, check if they belong to current group at this level
+      if (row.type === 'subtotal') {
+        // If subtotal is for a level DEEPER than current level, include it in rowspan
+        // If subtotal is for current level or shallower, it ends the group
+        if (row.level! > level) {
+          // Subtotal for deeper level - include in current level's rowspan
+          rowCount++;
+          continue;
+        } else if (row.level! === level) {
+          // Subtotal for current level - include it then end the group
+          rowCount++;
+          if (currentValue !== null && rowCount > 0) {
+            pageRowspans.set(`${level}-${startIdx}`, rowCount);
+          }
+          currentValue = null;
+          rowCount = 0;
+          continue;
+        } else {
+          // Subtotal for shallower level - ends the group
+          if (currentValue !== null && rowCount > 0) {
+            pageRowspans.set(`${level}-${startIdx}`, rowCount);
+          }
+          currentValue = null;
+          rowCount = 0;
+          continue;
+        }
+      }
+      
+      const value = row.path[level] ?? "(blank)";
+      
+      if (currentValue !== value) {
+        if (currentValue !== null) {
+          pageRowspans.set(`${level}-${startIdx}`, rowCount);
+        }
+        currentValue = value;
+        startIdx = i;
+        rowCount = 0;
+      }
+      
+      rowCount++;
+    }
+    
+    if (currentValue !== null) {
+      pageRowspans.set(`${level}-${startIdx}`, rowCount);
+    }
+  }
+
+  console.log('Visible rows count:', visibleRows.length);
+  console.log('Page rowspans (first 20):', Array.from(pageRowspans.entries()).slice(0, 20));
 
   // Helper to calculate subtotal values
   const calculateSubtotal = (level: number, path: string[]): number[][] => {
@@ -300,8 +410,8 @@ export const PivotTable: React.FC<Props> = ({
   const bodyRows: React.ReactNode[] = [];
   const renderedCells = new Set<string>();
 
-  for (let rowIdx = 0; rowIdx < renderRows.length; rowIdx++) {
-    const row = renderRows[rowIdx];
+  for (let rowIdx = 0; rowIdx < visibleRows.length; rowIdx++) {
+    const row = visibleRows[rowIdx];
     
     if (row.type === 'data') {
       const leftCells: React.ReactNode[] = [];
@@ -311,7 +421,7 @@ export const PivotTable: React.FC<Props> = ({
         const cellKey = `${level}-${rowIdx}`;
         
         if (!renderedCells.has(cellKey)) {
-          const span = row.rowspans[level];
+          const span = pageRowspans.get(cellKey) ?? 1; // Use page-aware rowspan!
           
           if (span > 0) {
             const value = row.path[level] ?? "(blank)";
@@ -321,7 +431,7 @@ export const PivotTable: React.FC<Props> = ({
                 key={cellKey}
                 rowSpan={span}
                 className="table-body-1"
-                style={{ paddingLeft: `${8 + level * 20}px` }}
+                style={{ paddingLeft: `${16 + level * 16}px` }}
               >
                 {value}
               </td>
@@ -335,11 +445,14 @@ export const PivotTable: React.FC<Props> = ({
         }
       }
 
-      // Data cells
+      // Data cells - use pageMatrix for paginated data
+      const pageMatrix = pivot?.matrix ?? [];
+      const pageRowIndex = row.dataIndex! - pageStartIdx; // Convert to page-local index
+      
       const dataCells = colLeaves
         .map((cIdx) =>
           Array.from({ length: vCount }).map((_, vi) => {
-            const slotRow = totalsMatrix[row.dataIndex!] ?? [];
+            const slotRow = pageMatrix[pageRowIndex] ?? [];
             const cellValues = slotRow[cIdx];
             const value = Array.isArray(cellValues) ? cellValues[vi] : null;
             return (
@@ -357,70 +470,73 @@ export const PivotTable: React.FC<Props> = ({
           {dataCells}
         </tr>
       );
-} else {
-  const level = row.level!;
-  const parentValue = row.parentValue!;
-  const subtotalValues = calculateSubtotal(level, row.path);
+    } else {
+      // Subtotal row
+      const level = row.level!;
+      const parentValue = row.parentValue!;
+      const subtotalValues = calculateSubtotal(level, row.path);
 
-  const leftCells: React.ReactNode[] = [];
-  let labelPlaced = false;
+      const leftCells: React.ReactNode[] = [];
+      let labelPlaced = false;
 
-  for (let lvl = 0; lvl < leftLevels; lvl++) {
-    const cellKey = `${lvl}-${rowIdx}`;
+      // Subtotal should appear in the NEXT column after its level (the child column)
+      // and span from there to the end of left columns
+      const targetColumn = level + 1; // Next column after the parent level
 
-    // If this column is already covered by an active rowspan, skip it
-    if (renderedCells.has(cellKey)) {
-      continue;
-    }
+      for (let lvl = 0; lvl < leftLevels; lvl++) {
+        const cellKey = `${lvl}-${rowIdx}`;
 
-    // Place subtotal label at the first available column
-    // at or after the logical level
-    if (!labelPlaced && lvl >= level) {
-      leftCells.push(
-        <td
-          key={`subtotal-label-${rowIdx}`}
-          colSpan={leftLevels - lvl}
-          className="table-body-1 row-subtotal"
-          style={{ paddingLeft: `${8 + lvl * 20}px` }}
-        >
-          Total {parentValue}
-        </td>
+        // If this column is already covered by an active rowspan, skip it
+        if (renderedCells.has(cellKey)) {
+          continue;
+        }
+
+        // Place subtotal label at the target column (child of parent level)
+        if (!labelPlaced && lvl >= targetColumn) {
+          const colspan = leftLevels - lvl; // Span from current column to end
+          leftCells.push(
+            <td
+              key={`subtotal-label-${rowIdx}`}
+              colSpan={colspan}
+              className="table-body-1 row-subtotal"
+              style={{ paddingLeft: `${16 + lvl * 16}px` }}
+            >
+              Total {parentValue}
+            </td>
+          );
+          labelPlaced = true;
+          break; // remaining columns covered by colspan
+        }
+
+        // For other uncovered columns before target, render empty placeholder
+        leftCells.push(
+          <td
+            key={`empty-${rowIdx}-${lvl}`}
+            className="table-body-1 row-subtotal"
+          />
+        );
+      }
+
+      const subtotalDataCells = colLeaves
+        .map((_, ci) =>
+          Array.from({ length: vCount }).map((_, vi) => (
+            <td
+              key={`subtotal-${rowIdx}-${ci}-${vi}`}
+              className="table-cell table-cell-total cell-subtotal-bg"
+            >
+              {(subtotalValues[ci]?.[vi] ?? 0).toLocaleString()}
+            </td>
+          ))
+        )
+        .flat();
+
+      bodyRows.push(
+        <tr key={`subtotal-${rowIdx}`} className="row-subtotal">
+          {leftCells}
+          {subtotalDataCells}
+        </tr>
       );
-      labelPlaced = true;
-      break; // remaining hierarchy columns are covered by colspan
     }
-
-    // Otherwise render an empty placeholder
-    leftCells.push(
-      <td
-        key={`empty-${rowIdx}-${lvl}`}
-        className="table-body-1 row-subtotal"
-      />
-    );
-  }
-
-  const subtotalDataCells = colLeaves
-    .map((_, ci) =>
-      Array.from({ length: vCount }).map((_, vi) => (
-        <td
-          key={`subtotal-${rowIdx}-${ci}-${vi}`}
-          className="table-cell table-cell-total cell-subtotal-bg"
-        >
-          {(subtotalValues[ci]?.[vi] ?? 0).toLocaleString()}
-        </td>
-      ))
-    )
-    .flat();
-
-  bodyRows.push(
-    <tr key={`subtotal-${rowIdx}`} className="row-subtotal">
-      {leftCells}
-      {subtotalDataCells}
-    </tr>
-  );
-}
-
-
   }
 
   const grandTotalRow = (
@@ -428,7 +544,7 @@ export const PivotTable: React.FC<Props> = ({
       <td
         className="table-body-1 row-grand-total cell-grand-total-bg"
         colSpan={leftLevels}
-        style={{ paddingLeft: "8px" }}
+        style={{ paddingLeft: "16px" }}
       >
         Grand Total
       </td>
@@ -500,43 +616,55 @@ export const PivotTable: React.FC<Props> = ({
         .table-head-1 {
           background-color: white;
           border: 1px solid #ddd;
-          padding: 8px 12px;
+          padding: 12px 16px;
           text-align: left;
           font-weight: 600;
+          font-size: 14px;
         }
         
         .table-head-2 {
           background-color: #f8f9fa;
           border: 1px solid #ddd;
-          padding: 8px 12px;
+          padding: 12px 16px;
           text-align: center;
           font-weight: 600;
+          font-size: 14px;
         }
         
         .table-head-3 {
           background-color: #f8f9fa;
           border: 1px solid #ddd;
-          padding: 8px 12px;
+          padding: 10px 16px;
           text-align: center;
           font-weight: 500;
+          font-size: 13px;
         }
         
         .table-head-4 {
           font-size: 12px;
         }
         
+        .table-head-top {
+          background-color: #f8f9fa;
+          border: 1px solid #ddd;
+        }
+        
         .table-body-1 {
           border: 1px solid #ddd;
-          padding: 8px 12px;
+          padding: 10px 16px;
           background-color: white;
-          vertical-align: top;
+          vertical-align: middle;
+          font-size: 14px;
+          line-height: 1.5;
         }
         
         .table-cell {
           border: 1px solid #ddd;
-          padding: 8px 12px;
+          padding: 10px 16px;
           text-align: right;
           background-color: white;
+          font-size: 14px;
+          line-height: 1.5;
         }
         
         .table-cell-total {
@@ -564,12 +692,14 @@ export const PivotTable: React.FC<Props> = ({
         .header-flex-container {
           display: flex;
           align-items: center;
+          gap: 8px;
         }
         
         .header-flex-center {
           display: flex;
           justify-content: center;
           align-items: center;
+          min-height: 40px;
         }
       `}</style>
     </div>

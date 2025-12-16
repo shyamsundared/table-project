@@ -77,6 +77,8 @@ export const PivotPage: React.FC = () => {
   const handlePrevPage = () => setCurrentPage((p) => Math.max(1, p - 1));
   const handleNextPage = () =>
     setCurrentPage((p) => (fullPivot ? Math.min(totalPages, p + 1) : p));
+  const handleFirstPage = () => setCurrentPage(1);
+  const handleLastPage = () => setCurrentPage(totalPages);
 
   // Filtered columns for the right-side list (search)
   const filteredColumns = useMemo(() => {
@@ -112,6 +114,10 @@ export const PivotPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const startRow = fullPivot ? pageStart + 1 : 0;
+  const endRow = fullPivot ? Math.min(pageStart + pageSize, fullPivot.rowArray.length) : 0;
+  const totalRows = fullPivot?.rowArray.length ?? 0;
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
@@ -134,8 +140,8 @@ export const PivotPage: React.FC = () => {
 
       <div className="flex gap-10">
         {/* LEFT: Table */}
-        <div className="flex-1 flex min-w-0 justify-center">
-          <div className="max-w-full overflow-x-auto">
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 overflow-x-auto">
             {!rows.length ? (
               <div className="text-center py-12 text-gray-500">
                 <p className="text-lg font-medium">No data loaded</p>
@@ -167,6 +173,81 @@ export const PivotPage: React.FC = () => {
               </>
             )}
           </div>
+
+          {/* Enhanced Pagination Controls - Below Table */}
+          {fullPivot && totalRows > 0 && (
+            <div className="mt-4 bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                {/* Left: Row info */}
+                <div className="text-sm text-gray-700 font-medium">
+                  Showing {startRow} to {endRow} of {totalRows} rows
+                </div>
+
+                {/* Center: Navigation buttons */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleFirstPage}
+                    disabled={currentPageDisplay === 1}
+                    className="px-3 py-2 bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm font-medium"
+                    title="First page"
+                  >
+                    «
+                  </button>
+                  <button
+                    onClick={handlePrevPage}
+                    disabled={currentPageDisplay === 1}
+                    className="px-3 py-2 bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm font-medium"
+                    title="Previous page"
+                  >
+                    ‹ Prev
+                  </button>
+                  
+                  <span className="px-4 py-2 text-sm text-gray-700 font-medium">
+                    Page {currentPageDisplay} of {totalPages}
+                  </span>
+                  
+                  <button
+                    onClick={handleNextPage}
+                    disabled={currentPageDisplay === totalPages}
+                    className="px-3 py-2 bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm font-medium"
+                    title="Next page"
+                  >
+                    Next ›
+                  </button>
+                  <button
+                    onClick={handleLastPage}
+                    disabled={currentPageDisplay === totalPages}
+                    className="px-3 py-2 bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm font-medium"
+                    title="Last page"
+                  >
+                    »
+                  </button>
+                </div>
+
+                {/* Right: Page size selector */}
+                <div className="flex items-center gap-2 text-sm">
+                  <label className="text-gray-700 font-medium">
+                    Rows per page:
+                  </label>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="border border-gray-300 rounded px-3 py-2 bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                    <option value={totalRows}>All ({totalRows})</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* RIGHT: Drag / Controls */}
@@ -345,48 +426,6 @@ export const PivotPage: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* Pagination */}
-      {fullPivot && fullPivot.rowArray.length > pageSize && (
-        <div className="flex gap-4 items-center mt-4 text-sm border-t pt-4">
-          <button
-            onClick={handlePrevPage}
-            disabled={currentPageDisplay === 1}
-            className="bg-gray-200 px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300"
-          >
-            Prev
-          </button>
-
-          <span className="text-xs text-gray-700">
-            Page {currentPageDisplay} of {totalPages} ({fullPivot.rowArray.length} total rows)
-          </span>
-
-          <button
-            onClick={handleNextPage}
-            disabled={currentPageDisplay === totalPages}
-            className="bg-gray-200 px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300"
-          >
-            Next
-          </button>
-
-          <label className="text-xs ml-auto">
-            Rows per page:
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              className="border rounded px-2 py-1 ml-2"
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
-          </label>
-        </div>
-      )}
     </div>
   );
 };
